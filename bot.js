@@ -1,5 +1,5 @@
 const { Telegraf } = require('telegraf')
-const token = '2057680315:AAFQDheW5G1KdggcGTf9pRbMc9FDuF1-9Ac'
+const token = process.env.BOT_TOKEN || '2057680315:AAFQDheW5G1KdggcGTf9pRbMc9FDuF1-9Ac'
 const bot = new Telegraf(token)
 const citiesArr = require("./cities.json"); // JSON-файл со списком городом
 
@@ -62,6 +62,10 @@ bot.on("text", async (ctx) => {
 })
 
 bot.launch() // запуск бота
+
+// Enable graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 function init(){
     expectedFirstChar = ''
