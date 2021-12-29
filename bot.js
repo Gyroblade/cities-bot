@@ -3,19 +3,18 @@ const token = '2057680315:AAFQDheW5G1KdggcGTf9pRbMc9FDuF1-9Ac'
 const bot = new Telegraf(token)
 const citiesArr = require("./cities.json"); // JSON-файл со списком городом
 
+const WIN_CHANCE_PERCENT = -1
+
 let expectedFirstChar = '' // здесь хранится буква на которую бот ждет ответа от пользователя
 const citiesSet = new Set() // здесь хранятся уже названные города
 let botLost = false
-let winChance = 5
+let winChance = WIN_CHANCE_PERCENT
 
+//ответ бота на команду /start
 bot.start((ctx) => {
-    expectedFirstChar = ''
-    citiesSet.clear()
-    botLost = false
-    winChance = 5
-    ctx.reply('Начинаем новую партию')
-}) //ответ бота на команду /start
-bot.help((ctx) => ctx.reply('Игра в города. Ты знаешь правила)')) //ответ бота на команду /help
+    init()
+    ctx.reply('Начинаем новую партию! Напиши название города 😉')
+})
 
 bot.on("text", async (ctx) => {
     if (botLost) {
@@ -25,7 +24,7 @@ bot.on("text", async (ctx) => {
     const usrCity = ctx.update.message.text.trim() // сообщение юзера (город)
     const isCityExist = isCityInArray(citiesArr, usrCity) // проверем есть ли такой город в JSON файле
     if (!isCityExist)  { // если нет - выходим
-        ctx.replyWithHTML(`<b>${usrCity}</b> - не знаю такого города`)
+        ctx.replyWithHTML(`<b>${usrCity}</b> - не знаю такого города 😐`)
         return
     }
 
@@ -35,27 +34,27 @@ bot.on("text", async (ctx) => {
         ctx.replyWithHTML(`Тебе на <b>${expectedFirstChar}</b>`)
         return
     }
-
+    // проверяем сэт уже названных городов
     if (citiesSet.has(usrCity.toLocaleUpperCase())) {
-        ctx.replyWithHTML(`<b>${usrCity}</b> - такой город уже был`)
+        ctx.replyWithHTML(`<b>${usrCity}</b> - такой город уже был 😐`)
         return
     }
-    citiesSet.add(usrCity.toLocaleUpperCase())
-    //console.log('citiesSet>>', citiesSet)
+    citiesSet.add(usrCity.toLocaleUpperCase()) // добавляем в сэт названных городов ответ юзера
     const cityLastChar = getCityLastChar(usrCity) // получаем последнюю букву города
     const citiesByChar = findCitiesByChar(citiesArr, cityLastChar) // находим все города что начинаются на эту букву
-    const citiesNotInSet = removeExceptions(citiesByChar, citiesSet)
-    console.log('шанс выиграть>>', winChance)
-    if (citiesNotInSet.length < 1 || tryWin(winChance)) {
-        ctx.replyWithHTML(`Ты выиграл! Я больше не знаю городов ;(`)
+    const notNamedCities = removeExceptions(citiesByChar, citiesSet) // убираем из выборки на ответ города что уже были
+    console.log('шанс выиграть>>', winChance + '%', 'user>>', ctx.update.message.from.first_name, 'id>>', ctx.update.message.from.id)
+    if (notNamedCities.length < 1 || tryWin(winChance)) { // если бот не нашел больше городов на букву или сработал случайный выигрыш
+        ctx.replyWithHTML(`🎉 Ты выиграл! 🎉 Я больше не знаю городов 😏`)
         botLost = true
+        console.log('notNamedCities>>', notNamedCities.length, 'cityLastChar>>', cityLastChar)
         return
     }
     winChance = winChance + 1 // увеличиваем шанс выиграть у бота
-    const randomCity = getRandom(citiesByChar) // случайно выбираем из списка подходящих
+    const randomCity = getRandom(notNamedCities) // случайно выбираем из списка подходящих
     await wait(100);
     ctx.reply(randomCity) // отвечаем
-    citiesSet.add(randomCity.toLocaleUpperCase())
+    citiesSet.add(randomCity.toLocaleUpperCase()) // добавляем в сэт ответ бота
     console.log('citiesSet>>', citiesSet)
     await wait();
     expectedFirstChar = getCityLastChar(randomCity) // пишет последнюю букву города, который ответил бот
@@ -63,6 +62,13 @@ bot.on("text", async (ctx) => {
 })
 
 bot.launch() // запуск бота
+
+function init(){
+    expectedFirstChar = ''
+    citiesSet.clear()
+    botLost = false
+    winChance = WIN_CHANCE_PERCENT
+}
 
 /** проверка есть ли город в массиве */
 function isCityInArray (arr, cityName){
@@ -91,7 +97,7 @@ function wait(ms=1000) {
 }
 /** получить последнюю букву города, учитвая буквы-исключения */
 function getCityLastChar (city) {
-    const charExceptions = new Set(['Ъ','Ь','Й','Ы'])
+    const charExceptions = new Set(['Ъ','Ь',/*'Й',*/'Ы'])
     const arr = city.toUpperCase().split('')
     const newArr = arr.filter((el) => {
         return !charExceptions.has(el);
@@ -108,10 +114,9 @@ function removeExceptions (arr, exSet) {
 function tryWin (_winChance){
     let result = false
     const randomNumber = Math.random() * 100;
-    console.log(randomNumber, _winChance);
-    if (randomNumber <= _winChance) {
+    if (_winChance > 0 && randomNumber <= _winChance) {
         result = true
-        //console.log("You Won!")
+        console.log('Выигрыш по случаю', randomNumber, _winChance + '%')
     }
     return result
 }
