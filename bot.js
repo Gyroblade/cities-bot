@@ -1,41 +1,53 @@
-//import { session, Telegraf } from "telegraf";
 const { Telegraf, session } = require("telegraf");
-//const session = require("telegraf/session");
-//const session = require("telegraf/session");
 const token =
-  process.env.BOT_TOKEN || "2057680315:AAFQDheW5G1KdggcGTf9pRbMc9FDuF1-9Ac";
+  process.env.BOT_TOKEN;
 const bot = new Telegraf(token);
 const citiesArr = require("./cities.json"); // JSON-файл со списком городом
 
-const WIN_CHANCE_PERCENT = -1;
-
-//let expectedFirstChar = ""; // здесь хранится буква на которую бот ждет ответа от пользователя
-//const citiesSet = new Set() // здесь хранятся уже названные города
-//let botLost = false;
-//let winChance = WIN_CHANCE_PERCENT;
+const WIN_CHANCE_PERCENT = -3;
 
 bot.use(session())
 //ответ бота на команду /start
 bot.start(async (ctx) => {
-  //expectedFirstChar = "";
-  //ctx.session.citiesSet.clear();
-  //botLost = false;
-  //winChance = WIN_CHANCE_PERCENT;
-  ctx.session = {
-    conf:{
-      id: ctx.update.from.id,
-      citiesSet: new Set(),
-      expectedFirstChar: "",
-      botLost: false,
-      winChance: WIN_CHANCE_PERCENT
-    }
-  };
-  console.log(ctx.session, ctx.update.from.id);
-  await ctx.reply("Начинаем новую партию! Напиши название города 😉");
+  await init(ctx);
+});
+// ответ бота на любой текст
+bot.on("text", async (ctx) => {
+  if (!ctx.session) { // если сессия пустая - инициируем новую
+    console.log(ctx.session, 'новая сессия');
+    await init(ctx, ctx.update.message.text.trim());
+    return
+  }
+  await bot_response(ctx)
 });
 
-bot.on("text", async (ctx) => {
-  if (ctx.session.conf.botLost) {
+bot.launch(); // запуск бота
+// Enable graceful stop
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
+
+// инициализация переменных
+async function init (ctx, startCity = '') {
+  ctx.session = {
+      citiesSet: new Set(),
+      expectedFirstChar: '',
+      botLost: false,
+      winChance: WIN_CHANCE_PERCENT,
+      userName: ctx.update.message.from.first_name
+  };
+  //console.log('start', ctx.session, 'startCity>>', startCity);
+  if (!startCity) { // если юзер написал что-то - сразу начинаем игру с этим словом как первым городом
+    await ctx.replyWithHTML(`Начинаем новую партию, <b>${ctx.session.userName}</b>! Напиши название города 😉`);
+  } else {
+    await ctx.replyWithHTML(`Начинаем новую партию, <b>${ctx.session.userName}</b>! Напиши название города 😉`);
+    await bot_response(ctx)
+  }
+};
+
+// ответ бота
+async function bot_response (ctx) {
+
+  if (ctx.session.botLost) {
     await ctx.replyWithHTML(
       `Я проиграл! Чтобы начать новую партию, введи команду <b>/start</b>`
     );
@@ -51,38 +63,36 @@ bot.on("text", async (ctx) => {
 
   // если есть какая-то буква в глобальной переменной и она не совпадает с первой буквой города что написал юзер - выходим
   if (
-    ctx.session.conf.expectedFirstChar?.length > 0 &&
-    usrCity[0].toLocaleUpperCase() !== ctx.session.conf.expectedFirstChar
+    ctx.session.expectedFirstChar?.length > 0 &&
+    usrCity[0].toLocaleUpperCase() !== ctx.session.expectedFirstChar
   ) {
     await wait(500);
     await ctx.replyWithHTML(
-      `Тебе на <b>${ctx.session.conf.expectedFirstChar}</b>`
+      `Тебе на <b>${ctx.session.expectedFirstChar}</b>`
     );
     return;
   }
   // проверяем сэт уже названных городов
-  if (ctx.session.conf.citiesSet.has(usrCity.toLocaleUpperCase())) {
+  if (ctx.session.citiesSet.has(usrCity.toLocaleUpperCase())) {
     await ctx.replyWithHTML(`<b>${usrCity}</b> - такой город уже был 😐`);
     return;
   }
-  ctx.session.conf.citiesSet.add(usrCity.toLocaleUpperCase()); // добавляем в сэт названных городов ответ юзера
+  ctx.session.citiesSet.add(usrCity.toLocaleUpperCase()); // добавляем в сэт названных городов ответ юзера
   const cityLastChar = getCityLastChar(usrCity); // получаем последнюю букву города
   const citiesByChar = findCitiesByChar(citiesArr, cityLastChar); // находим все города что начинаются на эту букву
   const notNamedCities = removeExceptions(
     citiesByChar,
-    ctx.session.conf.citiesSet
+    ctx.session.citiesSet
   ); // убираем из выборки на ответ города что уже были
   console.log(
     "шанс выиграть>>",
     ctx.session.winChance + "%",
     "user>>",
-    ctx.update.message.from.first_name,
-    "id>>",
-    ctx.update.message.from.id
+    ctx.update.message.from.first_name
   );
-  if (notNamedCities.length < 1 || tryWin(ctx.session.conf.winChance)) {
+  if (notNamedCities.length < 1 || tryWin(ctx.session.winChance)) {
     // если бот не нашел больше городов на букву или сработал случайный выигрыш
-    await ctx.replyWithHTML(`🎉 Ты выиграл! 🎉 Я больше не знаю городов 😏`);
+    await ctx.replyWithHTML(`🎉 Ты выиграл, <b>${ctx.session.userName}</b>! 🎉 Я больше не знаю городов 😏`);
     botLost = true;
     console.log(
       "notNamedCities>>",
@@ -92,22 +102,16 @@ bot.on("text", async (ctx) => {
     );
     return;
   }
-  ctx.session.conf.winChance = ctx.session.conf.winChance + 1; // увеличиваем шанс выиграть у бота
+  ctx.session.winChance = ctx.session.winChance + 1; // увеличиваем шанс выиграть у бота
   const randomCity = getRandom(notNamedCities); // случайно выбираем из списка подходящих
   await wait(100);
   ctx.reply(randomCity); // отвечаем
-  ctx.session.conf.citiesSet.add(randomCity.toLocaleUpperCase()); // добавляем в сэт ответ бота
-  console.log("citiesSet>>", ctx.session.conf.citiesSet);
+  ctx.session.citiesSet.add(randomCity.toLocaleUpperCase()); // добавляем в сэт ответ бота
+  console.log("citiesSet>>", ctx.session.citiesSet, 'ctx.session>>', ctx.session);
   await wait();
-  ctx.session.conf.expectedFirstChar = getCityLastChar(randomCity); // пишет последнюю букву города, который ответил бот
-  ctx.replyWithHTML(`Тебе на <b>${ctx.session.conf.expectedFirstChar}</b>`);
-});
-
-bot.launch(); // запуск бота
-
-// Enable graceful stop
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+  ctx.session.expectedFirstChar = getCityLastChar(randomCity); // пишет последнюю букву города, который ответил бот
+  ctx.replyWithHTML(`Тебе на <b>${ctx.session.expectedFirstChar}</b>`);
+}
 
 /** проверка есть ли город в массиве */
 function isCityInArray(arr, cityName) {
